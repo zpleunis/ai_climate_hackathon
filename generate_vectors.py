@@ -1,6 +1,7 @@
 import datetime
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pytz
 import scipy.ndimage
 import scipy.stats
@@ -45,10 +46,13 @@ WS_DTYPE = [("x", np.float),
             ("max_rel_humidity", np.float),
             ("max_rel_humidity_flag", np.str_, 1)]
 
+OV_DTYPE = [("liberal", np.float), ("conservative", np.float), ("ndp", np.float),
+            ("green", np.float), ("bloc", np.float), ("other", np.float)]
+
+# TODO try "total_snow", "total_rain" from other nearest station if non-existent
 # features to extract
 VARS = ["min_temperature", "mean_temperature", "max_temperature",
-        "total_precipitation", "total_rain", "total_snow",
-        "snow_on_ground"]
+        "total_precipitation", "snow_on_ground"]
 
 
 def angular_separation(ra1, dec1, ra2, dec2):
@@ -145,12 +149,23 @@ def angular_separation(ra1, dec1, ra2, dec2):
 
 
 def calculate_moments(ts):
-    """Calculate the moments of a timeseries."""
+    """Calculate the moments of a timeseries and the number of outliers."""
     mean = np.nanmean(ts)
-    sigma = np.nanstd(ts)
+    std = np.nanstd(ts)
     skew = scipy.stats.skew(ts, nan_policy="omit")
     kurt = scipy.stats.kurtosis(ts, nan_policy="omit")
-    return mean, sigma, skew, kurt
+
+    noutliers = np.sum(np.logical_or(ts < -3 * std, ts > 3 * std))
+
+    d_high_outliers = np.abs(np.nanpercentile(ts, 99) - mean)
+    d_low_outliers = np.abs(np.nanpercentile(ts, 1) - mean)
+
+    return mean, std, skew, kurt, noutliers, d_high_outliers, d_low_outliers
+
+
+def nan_helper(x):
+    """Helper to handle indices and logical indices of NaN arrays."""
+    return np.isnan(x), lambda y: y.nonzero()[0]
 
 
 class WSData():
@@ -178,7 +193,7 @@ class WSData():
 
         return self.unique_stations[nearest_idx]
 
-    def retrieve_vector(self, lon, lat, date):
+    def generate_input_vector(self, lon, lat, date):
         """Retrieve data for a given riding and election.
 
         Parameters
@@ -198,19 +213,26 @@ class WSData():
         """
         station = self.find_nearest_station(lon, lat)
 
-        # no of variables x 4 moments x 8 time ranges
-        vector = np.empty(len(VARS) * (2 * 1 + 4 * 6))
+        # no of variables x (2 time ranges +
+        # (4 moments + 3 outlier statistics) x 6 time ranges
+        vector = np.empty(len(VARS) * (2 * 1 + 7 * 6))
+
         i = 0
 
         station_data = self.data[self.data["stn_id"] == station]
 
-        # TODO subtract baseline
-        # TODO interpolate to replace nans
         # TODO add results from smoothed timeseries
-        # TODO add election result
         # TODO add previous election result
         # TODO add direction max gust (decomposed in x, y)
         for var in VARS:
+
+            baseline = np.nanmedian(station_data[var])
+
+            # remove NaNs by interpolation
+            nans, y = nan_helper(station_data[var])
+            station_data[var][nans] = np.interp(y(nans), y(~nans),
+                                                station_data[var][~nans])
+
             for timerange in [0, -1, -7, -30, -365, -730, -1095, -1460]:
 
                 if timerange == 0:
@@ -253,26 +275,58 @@ class WSData():
                 # smooth time-series
                 #ts = scipy.ndimage.gaussian_filter1d(station_time_data[var],
                 #                                     10.0, order=0)
-                ts = station_time_data[var]
+                ts = station_time_data[var] - baseline
 
                 if len(ts) == 1:
                     vector[i] = ts[0]
                     i += 1
                 else:
                     moments = calculate_moments(ts)
-                    vector[i:i+4] = moments
-                    i += 4
-
-        print("vector:", vector)
-        print("vector.shape:", vector.shape)
+                    vector[i:i+7] = moments
+                    i += 7
 
         return vector
 
 
+class ElectionResults():
+    """Quebec election results."""
+    def __init__(self, fname):
+        self.df = pd.read_csv(fname, encoding="utf-8")
+
+
 if __name__  == "__main__":
 
-    lon = -70.
-    lat = 44.
-    election_date = datetime.datetime(2019, 4, 30)
-    weather_data = WSData("data/weather_montreal.csv")
-    vector = weather_data.retrieve_vector(lon, lat, election_date)
+    #lon = -70.
+    #lat = 44.
+    #election_date = datetime.datetime(2019, 4, 30)
+    weather_data = WSData("data/weather_mctavish.csv")
+    #vector = weather_data.generate_input_vector(lon, lat, election_date)
+
+    er = ElectionResults("data/voteResult.csv")
+
+    for row in er.df.T:
+
+        election = er.df.iloc[row,:]
+
+        lon = float(election["lon"])
+        lat = float(election["lat"])
+
+        y, m, d = election["Election Date"].split("-")
+        election_date = datetime.datetime(int(y), int(m), int(d))
+
+        input_vector = weather_data.generate_input_vector(lon, lat, election_date)
+
+        print(input_vector)
+
+        output_vector = np.empty(6)
+
+        output_vector[0] = float(election["Liberal"])
+        output_vector[1] = float(election["Conservative"])
+        output_vector[2] = float(election["NDP"])
+        output_vector[3] = float(election["Green"])
+        output_vector[4] = float(election["Bloc"])
+        output_vector[5] = float(election["Other"])
+
+        print(output_vector)
+
+        break
