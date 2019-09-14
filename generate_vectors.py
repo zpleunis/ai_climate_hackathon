@@ -2,8 +2,11 @@ import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import pytz
+import scipy.ndimage
 import scipy.stats
 
+
+# weather station data
 WS_DTYPE = [("x", np.float),
             ("y", np.float),
             ("station_name", np.str_, 64),
@@ -42,6 +45,7 @@ WS_DTYPE = [("x", np.float),
             ("max_rel_humidity", np.float),
             ("max_rel_humidity_flag", np.str_, 1)]
 
+# features to extract
 VARS = ["min_temperature", "mean_temperature", "max_temperature",
         "total_precipitation", "total_rain", "total_snow",
         "snow_on_ground"]
@@ -159,7 +163,8 @@ class WSData():
             np.unique(self.data["stn_id"], return_index=True)
 
     def find_nearest_station(self, lon, lat):
-        """Find the station ID of the weather station nearest to some coordinate."""
+        """Find the station ID of the weather station nearest to some
+        coordinate."""
         angle, sep = angular_separation(
             self.data[self.unique_stations_idx]["x"],
             self.data[self.unique_stations_idx]["y"], lon, lat)
@@ -199,10 +204,13 @@ class WSData():
 
         station_data = self.data[self.data["stn_id"] == station]
 
-        # TODO pick the variable to keep
+        # TODO subtract baseline
         # TODO interpolate to replace nans
+        # TODO add results from smoothed timeseries
+        # TODO add election result
+        # TODO add previous election result
+        # TODO add direction max gust (decomposed in x, y)
         for var in VARS:
-
             for timerange in [0, -1, -7, -30, -365, -730, -1095, -1460]:
 
                 if timerange == 0:
@@ -242,6 +250,9 @@ class WSData():
                                           + datetime.timedelta(days=timerange))
                     station_time_data = station_data[mask]
 
+                # smooth time-series
+                #ts = scipy.ndimage.gaussian_filter1d(station_time_data[var],
+                #                                     10.0, order=0)
                 ts = station_time_data[var]
 
                 if len(ts) == 1:
@@ -251,8 +262,6 @@ class WSData():
                     moments = calculate_moments(ts)
                     vector[i:i+4] = moments
                     i += 4
-
-        # TODO add direction max gust
 
         print("vector:", vector)
         print("vector.shape:", vector.shape)
@@ -265,5 +274,5 @@ if __name__  == "__main__":
     lon = -70.
     lat = 44.
     election_date = datetime.datetime(2019, 4, 30)
-    weather_data = WSData("weather_montreal.csv")
+    weather_data = WSData("data/weather_montreal.csv")
     vector = weather_data.retrieve_vector(lon, lat, election_date)
