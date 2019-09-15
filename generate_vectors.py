@@ -190,10 +190,10 @@ class WSData():
         else:
             nearest_idx = np.argsort(sep)[1]
 
-        print("")
-        print("Nearest weather station is {:.2f} degrees away..".format(
-            sep[nearest_idx]))
-        print("")
+        #print("")
+        #print("Nearest weather station is {:.2f} degrees away..".format(
+        #    sep[nearest_idx]))
+        #print("")
 
         return self.unique_stations[nearest_idx]
 
@@ -308,7 +308,7 @@ class WSData():
                 #                                     10.0, order=0)
                 ts = station_time_data[var] - baseline
                 if len(ts) == 0:
-                    print("I give up")
+                    #print("I give up")
                     continue
                 # print('ts',ts)
                 if len(ts) == 1:
@@ -350,7 +350,7 @@ if __name__  == "__main__":
 
         input_vector = weather_data.generate_input_vector(lon, lat, election_date)
 
-        print(input_vector)
+        #print(input_vector)
 
         output_vector = np.empty(6)
 
@@ -361,7 +361,7 @@ if __name__  == "__main__":
         output_vector[4] = float(election["Bloc"])
         output_vector[5] = float(election["Other"])
 
-        print(output_vector)
+        #print(output_vector)
 
 
         break
@@ -376,8 +376,8 @@ def get_input_output():
     X=[]
     Y=[]
 
-    print(weather_data.unique_stations)
-    print(weather_data.unique_stations_idx)
+    #print(weather_data.unique_stations)
+    #print(weather_data.unique_stations_idx)
 
     for row in er.df.T:
 
@@ -393,7 +393,7 @@ def get_input_output():
 
         input_vector = weather_data.generate_input_vector(lon, lat, election_date)
 
-        print(input_vector)
+        #print(input_vector)
 
         output_vector = np.empty(6)
 
@@ -407,6 +407,6 @@ def get_input_output():
         X.append(input_vector)
         Y.append(output_vector)
 
-        print(output_vector)
+        #print(output_vector)
 
     return np.array(X),np.array(Y)
