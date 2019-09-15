@@ -6,8 +6,8 @@ import glob
 import pandas as pd
 
 # change to directory 
-# os.chdir('/Users/ldang/Desktop/GitHub/ai_climate_hackathon/data/climate_data')
-os.chdir('/data/climate_data')
+os.chdir('/Users/ldang/Desktop/GitHub/ai_climate_hackathon/data/climate_data')
+#os.chdir('/data/climate_data')
 
 # get .csv filenames
 extension = 'csv'
