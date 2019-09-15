@@ -52,7 +52,7 @@ OV_DTYPE = [("liberal", np.float), ("conservative", np.float), ("ndp", np.float)
 # TODO try "total_snow", "total_rain" from other nearest station if non-existent
 # features to extract
 VARS = ["min_temperature", "mean_temperature", "max_temperature",
-        "total_precipitation", "snow_on_ground"]
+        "total_precipitation"]#, "snow_on_ground"]
 
 
 def angular_separation(ra1, dec1, ra2, dec2):
@@ -152,15 +152,15 @@ def calculate_moments(ts):
     """Calculate the moments of a timeseries and the number of outliers."""
     mean = np.nanmean(ts)
     std = np.nanstd(ts)
-    skew = scipy.stats.skew(ts, nan_policy="omit")
-    kurt = scipy.stats.kurtosis(ts, nan_policy="omit")
+    #skew = scipy.stats.skew(ts, nan_policy="omit")
+    #kurt = scipy.stats.kurtosis(ts, nan_policy="omit")
 
     noutliers = np.sum(np.logical_or(ts < -3 * std, ts > 3 * std))
 
     d_high_outliers = np.abs(np.nanpercentile(ts, 99) - mean)
     d_low_outliers = np.abs(np.nanpercentile(ts, 1) - mean)
 
-    return mean, std, skew, kurt, noutliers, d_high_outliers, d_low_outliers
+    return mean, std, noutliers, d_high_outliers, d_low_outliers
 
 
 def nan_helper(x):
@@ -177,14 +177,18 @@ class WSData():
         self.unique_stations, self.unique_stations_idx = \
             np.unique(self.data["stn_id"], return_index=True)
 
-    def find_nearest_station(self, lon, lat):
+    def find_nearest_station(self, lon, lat, remove_station = False):
         """Find the station ID of the weather station nearest to some
         coordinate."""
+
         angle, sep = angular_separation(
             self.data[self.unique_stations_idx]["x"],
             self.data[self.unique_stations_idx]["y"], lon, lat)
 
-        nearest_idx = np.argmin(sep)
+        if not remove_station:
+            nearest_idx = np.argsort(sep)[0]
+        else:
+            nearest_idx = np.argsort(sep)[1]
 
         print("")
         print("Nearest weather station is {:.2f} degrees away..".format(
@@ -192,6 +196,27 @@ class WSData():
         print("")
 
         return self.unique_stations[nearest_idx]
+
+
+    def interpolate(self,station_data,VARS,lon,lat):
+
+        for var in VARS:
+
+            # remove NaNs by interpolation
+            nans, y = nan_helper(station_data[var])
+
+            #TODO bad practise because don't understand the error
+            try: station_data[var][nans] = np.interp(y(nans), y(~nans),
+                                                station_data[var][~nans])
+
+            # Recursively remove station from self and call interpolate again
+            except ValueError:
+                station = self.find_nearest_station(lon, lat, remove_station=True)
+                station_data = self.data[self.data["stn_id"] == station]
+                station_data = self.interpolate(station_data,VARS,lon,lat)
+
+        return station_data
+
 
     def generate_input_vector(self, lon, lat, date):
         """Retrieve data for a given riding and election.
@@ -211,34 +236,40 @@ class WSData():
             Data vector for model.
 
         """
-        station = self.find_nearest_station(lon, lat)
 
         # no of variables x (2 time ranges +
         # (4 moments + 3 outlier statistics) x 6 time ranges
-        vector = np.empty(len(VARS) * (2 * 1 + 7 * 6))
+        #vector = np.empty(len(VARS) * 5)
+        #vector = np.empty(len(VARS) * (2 * 1 + 5 * 5))
 
+        vector = np.empty(68)
         i = 0
 
+        station = self.find_nearest_station(lon, lat)
         station_data = self.data[self.data["stn_id"] == station]
-
+        #print("station data", station_data)
         # TODO add results from smoothed timeseries
         # TODO add previous election result
         # TODO add direction max gust (decomposed in x, y)
+
+        # Interpolate between missing data. If too much data is missing, try different station
+        station_data = self.interpolate(station_data,VARS,lon,lat)
+        
+        # Add moments of variables at a given period to vector
         for var in VARS:
 
             baseline = np.nanmedian(station_data[var])
 
-            # remove NaNs by interpolation
-            nans, y = nan_helper(station_data[var])
-            station_data[var][nans] = np.interp(y(nans), y(~nans),
-                                                station_data[var][~nans])
-
-            for timerange in [0, -1, -7, -30, -365, -730, -1095, -1460]:
+            #print("station data nans", station_data)
+            for timerange in [0, -1,-7,-30, -365]:
 
                 if timerange == 0:
                     # election day
                     mask = station_data["local_date"] == date
                     station_time_data = station_data[mask]
+                    # print(station_data["local_date"])
+                    # print( np.sum(mask),date, type(date))
+                    #print('mask',mask, 'station_time_data' ,station_time_data )
                 elif timerange == -1:
                     # day before election day
                     mask = station_data["local_date"] \
@@ -276,14 +307,17 @@ class WSData():
                 #ts = scipy.ndimage.gaussian_filter1d(station_time_data[var],
                 #                                     10.0, order=0)
                 ts = station_time_data[var] - baseline
-
+                if len(ts) == 0:
+                    print("I give up")
+                    continue
+                # print('ts',ts)
                 if len(ts) == 1:
                     vector[i] = ts[0]
                     i += 1
                 else:
                     moments = calculate_moments(ts)
-                    vector[i:i+7] = moments
-                    i += 7
+                    vector[i:i+5] = moments
+                    i += 5
 
         return vector
 
@@ -329,4 +363,50 @@ if __name__  == "__main__":
 
         print(output_vector)
 
+
         break
+def get_input_output():
+    #lon = -70.
+    #lat = 44.
+    #election_date = datetime.datetime(2019, 4, 30)
+    weather_data = WSData("data/climate_daily_combined.csv")
+    #vector = weather_data.generate_input_vector(lon, lat, election_date)
+
+    er = ElectionResults("data/voteResultQc.csv")
+    X=[]
+    Y=[]
+
+    print(weather_data.unique_stations)
+    print(weather_data.unique_stations_idx)
+
+    for row in er.df.T:
+
+        election = er.df.iloc[row,:]
+
+        #print(election)
+
+        lon = float(election["lon"])
+        lat = float(election["lat"])
+
+        y, m, d = election["Election Date"].split("-")
+        election_date = datetime.datetime(int(y), int(m), int(d))
+
+        input_vector = weather_data.generate_input_vector(lon, lat, election_date)
+
+        print(input_vector)
+
+        output_vector = np.empty(6)
+
+        output_vector[0] = float(election["Liberal"])
+        output_vector[1] = float(election["Conservative"])
+        output_vector[2] = float(election["NDP"])
+        output_vector[3] = float(election["Green"])
+        output_vector[4] = float(election["Bloc"])
+        output_vector[5] = float(election["Other"])
+
+        X.append(input_vector)
+        Y.append(output_vector)
+
+        print(output_vector)
+
+    return np.array(X),np.array(Y)
