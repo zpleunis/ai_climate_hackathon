@@ -1,7 +1,7 @@
 # political_climate
-Team Environmentailist for AI Launchlab Climate Change AI Hackathon 2019
+Team Policlime for AI Launchlab Climate Change AI Hackathon 2019
 
-Juliette Lavoie, Tom Rademaker, Lisa Dang & Ziggy Pleunis
+[Juliette Lavoie](https://github.com/juliettelavoie), [Tom Rademaker](https://github.com/tjrademaker), [Lisa Dang](https://github.com/lisadang27) & [Ziggy Pleunis](https://github.com/zpleunis)
 
 Goal: train a neural network to predict Canadian federal election results in Quebec based on weather station-derived climate variables.
 
